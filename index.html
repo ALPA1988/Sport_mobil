@@ -314,6 +314,16 @@
           if(isSameHour(d,maxItem)) return "var(--red)";
           return d.price >= dayAvg ? "var(--blue)" : "var(--blue-lo)";
         })
+        .attr("stroke", d => {
+          const nowDyn = luxon.DateTime.now().setZone(tz);
+          if (nowDyn >= d.start && nowDyn < d.end) return "#000"; // schwarze Umrandung
+          return null;
+        })
+        .attr("stroke-width", d => {
+          const nowDyn = luxon.DateTime.now().setZone(tz);
+          if (nowDyn >= d.start && nowDyn < d.end) return 2;
+          return 0;
+        })
         .on("pointermove",(ev,d)=>{
           tooltip.style("opacity",1)
             .html(`<strong>${fmtPrice(d.price)}</strong><br>${d.start.toFormat("HH:mm")}–${d.end.toFormat("HH:mm")}`)
@@ -486,4 +496,5 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
 
