@@ -1,5 +1,5 @@
 // sw.js
-const VERSION = 'v1.0.2';
+const VERSION = 'v1.0.3';
 const APP_SHELL = [
   './',
   './index.html',
@@ -87,5 +87,6 @@ async function cacheFirst(req) {
   cache.put(req, res.clone());
   return res;
 }
+
 
 
