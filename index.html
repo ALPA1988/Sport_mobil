@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <title>EPEX SPOT AT – Mobile (EUR/kWh)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.webmanifest">
+  <!-- iOS PWA Icons & Standalone -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png">
+  <!-- Fallback Favicon -->
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
+  <style>
+    :root{
+      --bg:#ffffff; --text:#111827; --muted:#6b7280; --card:#f9fafb; --grid:#e5e7eb;
+      --blue:#2563eb; --blue-lo:#3b82f6; --green:#16a34a; --red:#dc2626; --neg:#065f46; --line:#0f172a;
+      --space:16px; --radius:14px; --chart-h-hourly:280; --chart-h-daily:320;
+    }
+    @media (max-width: 600px){ :root{ --space:14px; --radius:12px; --chart-h-hourly:240; --chart-h-daily:280; } }
+    @media (max-width: 400px){ :root{ --space:12px; --radius:12px; --chart-h-hourly:220; --chart-h-daily:260; } }
+
+    *{box-sizing:border-box}
+    body{margin:0;padding:var(--space);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    h1{margin:0 0 10px;font-size:22px}
+    h2{margin:16px 0 10px;font-size:18px}
+    @media (max-width:480px){h1{font-size:19px} h2{font-size:16px}}
+
+    .kpis{display:grid;gap:10px;margin:6px 0 14px;grid-template-columns: repeat(4, 1fr);}
+    @media (max-width:900px){ .kpis{grid-template-columns: repeat(2, 1fr);} }
+    @media (max-width:420px){ .kpis{grid-template-columns: 1fr;} }
+
+    .kpi{background:var(--card);border-radius:var(--radius);padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+    .kpi .label{font-size:12px;color:var(--muted)}
+    .kpi .value{font-size:18px;font-weight:700}
+    .kpi .sub{font-size:12px;color:var(--muted)}
+
+    .chart-card{background:var(--card);border-radius:var(--radius);padding:8px;box-shadow:0 1px 2px rgba(0,0,0,.04);margin-bottom:16px}
+    .legend{display:flex;gap:10px;align-items:center;font-size:12px;color:var(--muted);padding:6px 4px 0;user-select:none;flex-wrap:wrap}
+    .legend .item{display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 10px;border-radius:10px;transition:background .15s; min-height:36px;}
+    .legend .item:hover{background:#eef2ff}
+    .legend .dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+    .legend .off{opacity:.35; text-decoration: line-through}
+
+    .tooltip{
+      position:fixed;pointer-events:none;z-index:10;background:#fff;color:var(--text);
+      border:1px solid var(--grid);padding:8px 10px;border-radius:10px;font-size:12px;
+      box-shadow:0 8px 30px rgba(0,0,0,.08);opacity:0;transition:opacity .12s ease;
+      max-width:80vw; line-height:1.25;
+    }
+    .notice{
+      position:fixed;left:50%;transform:translateX(-50%);
+      bottom:12px;background:#111827;color:#fff;padding:8px 12px;border-radius:10px;
+      font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);opacity:0;transition:opacity .2s, transform .2s;
+      z-index:9999;
+    }
+    .notice.show{opacity:1; transform:translateX(-50%) translateY(-4px);}
+  </style>
+</head>
+<body>
+  <h1>EPEX SPOT Österreich – EUR/kWh</h1>
+
+  <div class="kpis">
+    <div class="kpi">
+      <div class="label">Niedrigster Preis (heute)</div>
+      <div class="value" id="kpi-min">–</div>
+      <div class="sub" id="kpi-min-time">–</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Höchster Preis (heute)</div>
+      <div class="value" id="kpi-max">–</div>
+      <div class="sub" id="kpi-max-time">–</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Durchschnitt (heute)</div>
+      <div class="value" id="kpi-avg-today">–</div>
+    </div>
+    <div class="kpi">
+      <div class="label">Durchschnitt (30 Tage)</div>
+      <div class="value" id="kpi-avg-30">–</div>
+    </div>
+  </div>
+
+  <h2>Heute</h2>
+  <div class="chart-card">
+    <div id="chart-today" aria-label="Preise heute, stündlich"></div>
+  </div>
+
+  <h2>Morgen</h2>
+  <div class="chart-card">
+    <div id="chart-tomorrow" aria-label="Preise morgen, stündlich">noch nicht verfügbar</div>
+  </div>
+
+  <h2>Letzte 30 Tage (tagesbasis: Min / Ø / Max)</h2>
+  <div class="chart-card">
+    <div id="chart-30" aria-label="Preise letzte 30 Tage"></div>
+    <div class="legend" id="legend-30">
+      <div class="item" data-key="min"><span class="dot" style="background:var(--green)"></span><span>Minimum</span></div>
+      <div class="item" data-key="avg"><span class="dot" style="background:var(--blue)"></span><span>Durchschnitt</span></div>
+      <div class="item" data-key="max"><span class="dot" style="background:var(--red)"></span><span>Maximum</span></div>
+    </div>
+  </div>
+
+  <div class="tooltip" id="tooltip"></div>
+  <div class="notice" id="notice">Offline-Daten angezeigt (letzter Stand)</div>
+
+<script>
+(async function(){
+  const { DateTime } = luxon;
+  const tz = "Europe/Vienna";
+  const now = DateTime.now().setZone(tz);
+
+  const $ = sel => document.querySelector(sel);
+  const tooltip = d3.select("#tooltip");
+  const notice = $('#notice');
+
+  // ---- helpers ----
+  const fmtPrice = v => `${v.toFixed(4)} €/kWh`;
+  const byDayKey = dt => dt.toFormat("yyyy-LL-dd");
+  const cssNum = name => parseInt(getComputedStyle(document.documentElement).getPropertyValue(name), 10);
+
+  function showNotice(msg){
+    if(msg) notice.textContent = msg;
+    notice.classList.add('show');
+    setTimeout(()=> notice.classList.remove('show'), 3000);
+  }
+
+  function horizLine(g, y, value, width){
+    g.append("line")
+      .attr("x1", 0).attr("x2", width)
+      .attr("y1", y(value)).attr("y2", y(value))
+      .attr("stroke", "var(--line)")
+      .attr("stroke-width", 1.5)
+      .attr("opacity", 0.7)
+      .attr("stroke-dasharray", "4,4");
+  }
+  function zeroLine(g, y, width){
+    g.append("line")
+      .attr("x1",0).attr("x2",width)
+      .attr("y1",y(0)).attr("y2",y(0))
+      .attr("stroke","var(--line)")
+      .attr("stroke-width",1)
+      .attr("opacity",0.4);
+  }
+
+  // ---- Zeitfenster ----
+  const todayStart = now.startOf("day");
+  const todayEnd   = now.endOf("day");
+  const tomorrowStart = todayStart.plus({days:1});
+  const tomorrowEnd   = todayEnd.plus({days:1});
+  const start30 = todayStart.minus({days:29});
+  const end30   = todayEnd;
+
+  // ---- Fetch mit Offline-Fallback (localStorage) ----
+  const STORAGE_KEY = 'awattar_cache_v1'; // speichert {ts, start, end, data}
+  function saveCache(obj){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); }catch{}
+  }
+  function loadCache(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    }catch{ return null; }
+  }
+
+  async function fetchWindow(start, end){
+    const url = `https://api.awattar.at/v1/marketdata?start=${start.toMillis()}&end=${end.toMillis()}`;
+    try{
+      const res = await fetch(url, {mode:'cors', cache:'no-store'});
+      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const data = (json.data||[]).map(d => ({
+        start: DateTime.fromMillis(d.start_timestamp,{zone:tz}),
+        end:   DateTime.fromMillis(d.end_timestamp,{zone:tz}),
+        price: d.marketprice/1000 // EUR/kWh
+      })).sort((a,b)=>a.start-b.start);
+      // Cache den 30-Tage-Block (größter Datensatz) für Offline
+      if(end.equals(end30)) saveCache({ ts: Date.now(), start: start.toISO(), end: end.toISO(), data: data.map(x=>({s:x.start.toMillis(), e:x.end.toMillis(), p:x.price})) });
+      return data;
+    }catch(err){
+      // Offline/Fehler → versuche Cache
+      const cached = loadCache();
+      if(cached){
+        showNotice('Offline-Daten angezeigt (letzter Stand)');
+        const data = cached.data.map(x=>({
+          start: DateTime.fromMillis(x.s,{zone:tz}),
+          end:   DateTime.fromMillis(x.e,{zone:tz}),
+          price: x.p
+        })).sort((a,b)=>a.start-b.start);
+        return data;
+      }else{
+        throw err;
+      }
+    }
+  }
+
+  // ---- Daten laden ----
+  let data30 = [];
+  try { data30 = await fetchWindow(start30, end30); }
+  catch(e){
+    $('#chart-30').innerHTML = `<div style="padding:12px;color:#b91c1c">Fehler beim Laden (30 Tage): ${String(e)}</div>`;
+    return;
+  }
+
+  const todayData = data30.filter(d => d.start >= todayStart && d.start <= todayEnd);
+  // Morgen separat laden, damit es auch erscheint, wenn Cache von gestern kommt
+  let tomorrowData = [];
+  try { tomorrowData = await fetchWindow(tomorrowStart, tomorrowEnd); }
+  catch(e){ /* "noch nicht verfügbar" bleibt stehen */ }
+
+  // ---- KPIs (heute) ----
+  if(todayData.length){
+    const min = todayData.reduce((a,b)=>a.price<b.price?a:b);
+    const max = todayData.reduce((a,b)=>a.price>b.price?a:b);
+    const avgToday = todayData.reduce((s,d)=>s+d.price,0)/todayData.length;
+    const avg30 = data30.reduce((s,d)=>s+d.price,0)/data30.length;
+
+    $("#kpi-min").textContent = fmtPrice(min.price);
+    $("#kpi-min-time").textContent = `um ${min.start.toFormat("HH:mm")}`;
+    $("#kpi-max").textContent = fmtPrice(max.price);
+    $("#kpi-max-time").textContent = `um ${max.start.toFormat("HH:mm")}`;
+    $("#kpi-avg-today").textContent = fmtPrice(avgToday);
+    $("#kpi-avg-30").textContent = fmtPrice(avg30);
+  }
+
+  // ---- CHARTS (Heute/Morgen) ----
+  function drawHourlyChart(containerSel, dataset){
+    const el = d3.select(containerSel);
+    el.selectAll("*").remove();
+    if(!dataset || !dataset.length){
+      el.append("div").text("noch nicht verfügbar").style("color","var(--muted)").style("padding","8px");
+      return;
+    }
+
+    const margin = {top:8,right:14,bottom:30,left:50};
+    const width = el.node().clientWidth || 360;
+    const height = cssNum('--chart-h-hourly');
+
+    const svg = el.append("svg")
+      .attr("width","100%")
+      .attr("height",height+margin.top+margin.bottom)
+      .attr("viewBox",`0 0 ${width+margin.left+margin.right} ${height+margin.top+margin.bottom}`);
+
+    const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleTime()
+      .domain([dataset[0].start.toJSDate(), dataset[dataset.length-1].end.toJSDate()])
+      .range([0,width]);
+
+    const minP = d3.min(dataset,d=>d.price);
+    const maxP = d3.max(dataset,d=>d.price);
+    const pad = 0.05 * (Math.abs(maxP - minP) || 1);
+    const y = d3.scaleLinear()
+      .domain([Math.min(minP - pad, 0), Math.max(maxP + pad, 0)])
+      .range([height,0])
+      .nice();
+
+    const xTickHours = width < 360 ? 4 : (width < 520 ? 3 : 2);
+    const yTicks = width < 360 ? 4 : 6;
+
+    g.append("g").attr("transform",`translate(0,${height})`)
+      .call(d3.axisBottom(x).ticks(d3.timeHour.every(xTickHours)).tickFormat(d3.timeFormat("%H:%M")))
+      .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
+
+    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>d.toFixed(2)))
+      .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
+
+    g.append("g").selectAll("line.grid")
+      .data(y.ticks(yTicks))
+      .enter().append("line")
+      .attr("x1",0).attr("x2",width)
+      .attr("y1",d=>y(d)).attr("y2",d=>y(d))
+      .attr("stroke","var(--grid)").attr("stroke-width",1);
+
+    zeroLine(g, y, width);
+    const dayAvg = dataset.reduce((s,d)=>s+d.price,0)/dataset.length;
+    horizLine(g, y, dayAvg, width);
+
+    const minItem = dataset.reduce((a,b)=>a.price<b.price?a:b);
+    const maxItem = dataset.reduce((a,b)=>a.price>b.price?a:b);
+    const isSameHour = (a,b)=>a.start.toMillis()===b.start.toMillis();
+
+    const hourW = x(dataset[0].end.toJSDate()) - x(dataset[0].start.toJSDate());
+    const bw = Math.max(2, hourW * 0.9);
+
+    g.selectAll("rect.bar")
+      .data(dataset)
+      .enter().append("rect")
+        .attr("x",d=>x(d.start.toJSDate()))
+        .attr("y",d=> d.price >= 0 ? y(d.price) : y(0))
+        .attr("width",bw)
+        .attr("height",d=> Math.abs(y(d.price) - y(0)))
+        .attr("rx",2)
+        .attr("fill",d=>{
+          if(d.price < 0) return "var(--neg)";
+          if(isSameHour(d,minItem)) return "var(--green)";
+          if(isSameHour(d,maxItem)) return "var(--red)";
+          return d.price >= dayAvg ? "var(--blue)" : "var(--blue-lo)";
+        })
+        .on("pointermove",(ev,d)=>{
+          tooltip.style("opacity",1)
+            .html(`<strong>${fmtPrice(d.price)}</strong><br>${d.start.toFormat("HH:mm")}–${d.end.toFormat("HH:mm")}`)
+            .style("left",(ev.clientX+12)+"px").style("top",(ev.clientY+12)+"px");
+        })
+        .on("pointerleave",()=>tooltip.style("opacity",0));
+
+    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("EUR/kWh")
+      .style("fill","var(--muted)").style("font-size","11px");
+  }
+
+  // ---- 30-Tage-Chart (tagesweise, togglbare Legende) ----
+  const visibility30 = { min: true, avg: true, max: true };
+
+  function drawDailyAggChart(containerSel, hourlyDataset){
+    const { DateTime } = luxon;
+    const tz = "Europe/Vienna";
+
+    // aggregate by local day
+    const byDay = new Map();
+    hourlyDataset.forEach(d=>{
+      const k = d.start.setZone(tz).toFormat("yyyy-LL-dd");
+      if(!byDay.has(k)) byDay.set(k, []);
+      byDay.get(k).push(d.price);
+    });
+    const days = Array.from(byDay.entries())
+      .map(([k,arr])=>{
+        const min = d3.min(arr), max = d3.max(arr), avg = arr.reduce((s,x)=>s+x,0)/arr.length;
+        return { day: DateTime.fromISO(k,{zone:tz}), min, avg, max };
+      })
+      .sort((a,b)=>a.day-b.day);
+
+    const el = d3.select(containerSel);
+    el.selectAll("*").remove();
+    if(!days.length){
+      el.append("div").text("keine Daten").style("color","var(--muted)").style("padding","8px");
+      return;
+    }
+
+    const margin = {top:8,right:16,bottom:38,left:50};
+    const width = el.node().clientWidth || 360;
+    const height = cssNum('--chart-h-daily');
+
+    const svg = el.append("svg")
+      .attr("width","100%")
+      .attr("height",height+margin.top+margin.bottom)
+      .attr("viewBox",`0 0 ${width+margin.left+margin.right} ${height+margin.top+margin.bottom}`);
+    const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+    const x0 = d3.scaleBand()
+      .domain(days.map(d=>d.day.toISODate()))
+      .range([0,width]).paddingInner(0.15);
+
+    const groups = ["min","avg","max"];
+    const x1 = d3.scaleBand().domain(groups).range([0,x0.bandwidth()]).padding(0.15);
+
+    const minY = d3.min(days,d=>Math.min(d.min, d.avg, d.max));
+    const maxY = d3.max(days,d=>Math.max(d.min, d.avg, d.max));
+    const pad = 0.05 * (Math.abs(maxY - minY) || 1);
+
+    const y = d3.scaleLinear()
+      .domain([Math.min(minY - pad, 0), Math.max(maxY + pad, 0)])
+      .range([height,0]).nice();
+
+    const tickEvery = width < 360 ? 3 : (width < 520 ? 2 : 1);
+    const tickVals = days.map(d=>d.day.toISODate()).filter((_,i)=> i % tickEvery === 0);
+
+    g.append("g").attr("transform",`translate(0,${height})`)
+      .call(d3.axisBottom(x0).tickValues(tickVals).tickFormat(d=>{
+        return DateTime.fromISO(d,{zone:tz}).toFormat("dd.LL");
+      }))
+      .selectAll("text").style("font-size","11px").style("fill","var(--muted)")
+      .attr("transform","rotate(-25)").style("text-anchor","end");
+
+    const yTicks = width < 360 ? 4 : 6;
+    g.append("g").call(d3.axisLeft(y).ticks(yTicks).tickFormat(d=>d.toFixed(2)))
+      .selectAll("text").style("font-size","11px").style("fill","var(--muted)");
+
+    g.append("g").selectAll("line.grid")
+      .data(y.ticks(yTicks))
+      .enter().append("line")
+      .attr("x1",0).attr("x2",width)
+      .attr("y1",d=>y(d)).attr("y2",d=>y(d))
+      .attr("stroke","var(--grid)").attr("stroke-width",1);
+
+    // zero + overall avg
+    zeroLine(g, y, width);
+    const overallAvg = hourlyDataset.reduce((s,d)=>s+d.price,0)/hourlyDataset.length;
+    horizLine(g, y, overallAvg, width);
+
+    const color = v => v==="min" ? "var(--green)" : v==="max" ? "var(--red)" : "var(--blue)";
+
+    const dayGroups = g.selectAll("g.day")
+      .data(days).enter().append("g")
+      .attr("transform",d=>`translate(${x0(d.day.toISODate())},0)`);
+
+    dayGroups.selectAll("rect")
+      .data(d=>groups.map(k=>({key:k, value:d[k], day:d.day})))
+      .enter().append("rect")
+        .attr("class", d=>`bar series-${d.key}`)
+        .attr("x",d=>x1(d.key))
+        .attr("y",d=> d.value >= 0 ? y(d.value) : y(0))
+        .attr("width",x1.bandwidth())
+        .attr("height",d=> Math.abs(y(d.value) - y(0)))
+        .attr("rx",2)
+        .attr("fill",d=>color(d.key))
+        .style("display", d=> visibility30[d.key] ? null : "none")
+        .on("pointermove",(ev,d)=>{
+          tooltip.style("opacity",1)
+            .html(`${d.day.toFormat("dd.LL.yyyy")} · <strong>${d.key==="avg"?"Ø":d.key}</strong><br>${fmtPrice(d.value)}`)
+            .style("left",(ev.clientX+12)+"px").style("top",(ev.clientY+12)+"px");
+        })
+        .on("pointerleave",()=>tooltip.style("opacity",0));
+
+    g.append("text").attr("x",-margin.left+10).attr("y",-4).text("EUR/kWh")
+      .style("fill","var(--muted)").style("font-size","11px");
+  }
+
+  // Initial draw
+  function renderAll(){
+    drawHourlyChart("#chart-today", todayData);
+    drawHourlyChart("#chart-tomorrow", tomorrowData);
+    drawDailyAggChart("#chart-30", data30);
+    for (const k of ["min","avg","max"]) {
+      const el = document.querySelector(`#legend-30 .item[data-key="${k}"]`);
+      if (el) el.classList.toggle("off", !visibility30[k]);
+    }
+  }
+  renderAll();
+  addEventListener("resize", renderAll);
+
+  // Legend toggling (30 Tage)
+  document.getElementById("legend-30").addEventListener("click", (e)=>{
+    const item = e.target.closest(".item");
+    if(!item) return;
+    const key = item.getAttribute("data-key");
+    visibility30[key] = !visibility30[key];
+    document.querySelectorAll(`#chart-30 .series-${key}`).forEach(el=>{
+      el.style.display = visibility30[key] ? null : "none";
+    });
+    item.classList.toggle("off", !visibility30[key]);
+  });
+
+  // Zeige Offline-Hinweis, wenn navigator offline meldet
+  window.addEventListener('offline', ()=> showNotice('Offline – zeige letzten Stand'));
+})();
+</script>
+
+<!-- Service Worker registrieren -->
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      // optional: Update-Flow
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        sw && sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            // neue Version verfügbar
+            // showNotice('Update geladen – Seite neu laden für neue Version');
+          }
+        });
+      });
+    } catch (e) {
+      console.warn('SW registration failed', e);
+    }
+  });
+}
+</script>
+</body>
+</html>
