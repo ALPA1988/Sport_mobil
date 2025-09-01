@@ -30,9 +30,10 @@
     h2{margin:16px 0 10px;font-size:18px}
     @media (max-width:480px){h1{font-size:19px} h2{font-size:16px}}
 
-    .kpis{display:grid;gap:10px;margin:6px 0 14px;grid-template-columns: repeat(4, 1fr);}
-    @media (max-width:900px){ .kpis{grid-template-columns: repeat(2, 1fr);} }
-    @media (max-width:420px){ .kpis{grid-template-columns: 1fr;} }
+    .kpis{display:grid;gap:10px;margin:6px 0 14px;grid-template-columns: repeat(5, 1fr);}
+    @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3,1fr)} }
+    @media (max-width:800px) { .kpis{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:500px) { .kpis{grid-template-columns:1fr} }
 
     .kpi{background:var(--card);border-radius:var(--radius);padding:10px 12px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
     .kpi .label{font-size:12px;color:var(--muted)}
@@ -66,6 +67,11 @@
 
   <div class="kpis">
     <div class="kpi">
+      <div class="label">Aktueller Preis</div>
+      <div class="value" id="kpi-current">–</div>
+      <div class="sub" id="kpi-current-time">–</div>
+    </div>
+    <div class="kpi">
       <div class="label">Niedrigster Preis (heute)</div>
       <div class="value" id="kpi-min">–</div>
       <div class="sub" id="kpi-min-time">–</div>
@@ -84,6 +90,7 @@
       <div class="value" id="kpi-avg-30">–</div>
     </div>
   </div>
+
 
   <h2>Heute</h2>
   <div class="chart-card">
@@ -218,6 +225,12 @@
     const max = todayData.reduce((a,b)=>a.price>b.price?a:b);
     const avgToday = todayData.reduce((s,d)=>s+d.price,0)/todayData.length;
     const avg30 = data30.reduce((s,d)=>s+d.price,0)/data30.length;
+    const current = todayData.find(d => now >= d.start && now < d.end);
+    if (current) {
+      document.getElementById("kpi-current").textContent = fmtPrice(current.price);
+      document.getElementById("kpi-current-time").textContent = 
+        `${current.start.toFormat("HH:mm")}–${current.end.toFormat("HH:mm")}`;
+    }
 
     $("#kpi-min").textContent = fmtPrice(min.price);
     $("#kpi-min-time").textContent = `um ${min.start.toFormat("HH:mm")}`;
@@ -473,3 +486,4 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
+
