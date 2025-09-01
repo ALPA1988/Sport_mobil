@@ -26,9 +26,28 @@
 
     *{box-sizing:border-box}
     body{margin:0;padding:var(--space);font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
-    h1{margin:0 0 10px;font-size:22px}
+    h1{margin:0;font-size:22px}
     h2{margin:16px 0 10px;font-size:18px}
     @media (max-width:480px){h1{font-size:19px} h2{font-size:16px}}
+
+    /* Header mit Refresh-Button */
+    .header{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:12px;
+      gap:12px;
+    }
+    #refresh-btn{
+      background:var(--card);
+      border:1px solid var(--grid);
+      border-radius:8px;
+      padding:6px 10px;
+      font-size:16px;
+      cursor:pointer;
+      transition:background .15s;
+    }
+    #refresh-btn:hover{ background:#eef2ff; }
 
     .kpis{display:grid;gap:10px;margin:6px 0 14px;grid-template-columns: repeat(5, 1fr);}
     @media (max-width:1200px){ .kpis{grid-template-columns:repeat(3,1fr)} }
@@ -63,7 +82,10 @@
   </style>
 </head>
 <body>
-  <h1>EPEX SPOT Österreich – EUR/kWh</h1>
+  <div class="header">
+    <h1>EPEX SPOT Österreich – EUR/kWh</h1>
+    <button id="refresh-btn" title="Neu laden">🔄</button>
+  </div>
 
   <div class="kpis">
     <div class="kpi">
@@ -90,7 +112,6 @@
       <div class="value" id="kpi-avg-30">–</div>
     </div>
   </div>
-
 
   <h2>Heute</h2>
   <div class="chart-card">
@@ -316,7 +337,7 @@
         })
         .attr("stroke", d => {
           const nowDyn = luxon.DateTime.now().setZone(tz);
-          if (nowDyn >= d.start && nowDyn < d.end) return "#000"; // schwarze Umrandung
+          if (nowDyn >= d.start && nowDyn < d.end) return "#000"; // aktuelle Stunde umranden
           return null;
         })
         .attr("stroke-width", d => {
@@ -381,7 +402,7 @@
     const x1 = d3.scaleBand().domain(groups).range([0,x0.bandwidth()]).padding(0.15);
 
     const minY = d3.min(days,d=>Math.min(d.min, d.avg, d.max));
-    const maxY = d3.max(days,d=>Math.max(d.min, d.avg, d.max));
+    const maxY = d3.max(days,d=>Math.max(d.max, d.avg, d.min));
     const pad = 0.05 * (Math.abs(maxY - minY) || 1);
 
     const y = d3.scaleLinear()
@@ -472,6 +493,13 @@
 })();
 </script>
 
+<!-- Refresh-Button nur Seite neu laden -->
+<script>
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  location.reload();
+});
+</script>
+
 <!-- Service Worker registrieren -->
 <script>
 if ('serviceWorker' in navigator) {
@@ -496,5 +524,3 @@ if ('serviceWorker' in navigator) {
 </script>
 </body>
 </html>
-
-
